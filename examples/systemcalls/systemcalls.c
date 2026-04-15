@@ -17,7 +17,9 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
 
-    return true;
+    int status = system(cmd);
+    if (status == -1) return false;
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 /**
@@ -45,9 +47,6 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
  * TODO:
@@ -58,10 +57,32 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+    pid_t pid = fork();
 
-    va_end(args);
+    if (pid == -1) {
+        perror("fork");
+        va_end(args);
+        return false;
+    } else if (pid == 0) {
 
-    return true;
+        execv(command[0], command);
+        perror("execv");
+        exit(EXIT_FAILURE);
+    } else {
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("waitpid");
+            va_end(args);
+            return false;
+        }
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            va_end(args);
+            return true;
+        } else {
+            va_end(args);
+            return false;
+        }
+    }
 }
 
 /**
@@ -80,9 +101,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+
 
 
 /*
@@ -93,7 +112,37 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
-    va_end(args);
+    int kidpid;
+    int fd = open(outputfile, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+    if (fd < 0) { 
+        perror("open"); 
+        return false; 
+    }
 
-    return true;
+    switch (kidpid = fork()) {
+        case -1:
+            perror("fork");
+            close(fd);
+            return false;
+
+        case 0: 
+            if (dup2(fd, STDOUT_FILENO) < 0) {
+                perror("dup2");
+                exit(EXIT_FAILURE);
+            }
+            close(fd); 
+
+            execv(command[0], command);
+            
+            perror("execv");
+            exit(EXIT_FAILURE);
+
+        default:
+            close(fd);
+            int status;
+            if (waitpid(kidpid, &status, 0) == -1) {
+                return false;
+            }
+            return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
 }
