@@ -1,0 +1,29 @@
+#!/bin/sh
+
+DESC="AESD Socket Server"
+NAME=aesdsocket
+DAEMON= $(pwd)/$NAME
+PIDFILE=/var/run/$NAME.pid
+DAEMON_ARGS="-d"
+
+case "$1" in
+  start)
+    echo "Starting $DESC: $NAME"
+    start-stop-daemon --start --quiet --oknodo --exec $DAEMON -- $DAEMON_ARGS
+    ;;
+  stop)
+    echo "Stopping $DESC: $NAME"
+    start-stop-daemon --stop --quiet --oknodo --signal SIGTERM --exec $DAEMON --retry 5
+    ;;
+  restart)
+    echo "Restarting $DESC: $NAME"
+    $0 stop
+    $0 start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0
