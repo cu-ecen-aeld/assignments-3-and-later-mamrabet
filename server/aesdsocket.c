@@ -95,18 +95,31 @@ int main(int argc, char *argv[]) {
 
 
         int fd = open(DATA_FILE, O_RDWR | O_CREAT | O_APPEND, 0666);
+        if (fd == -1) {
+            syslog(LOG_ERR, "Could not open data file: %s", strerror(errno));
+            close(client_fd);
+            continue;
+        }
+
         char *rx_buffer = malloc(BUFFER_SIZE);
+        if (!rx_buffer) {
+            syslog(LOG_ERR, "Malloc failed");
+            close(fd);
+            close(client_fd);
+            continue;
+        }
+
         ssize_t bytes_recv;
-        size_t total_recv = 0;
+        while ((bytes_recv = recv(client_fd, rx_buffer, BUFFER_SIZE, 0)) > 0) {
+            if (write(fd, rx_buffer, bytes_recv) != bytes_recv) {
+                syslog(LOG_ERR, "Failed to write to file");
+                break;
+            }
+            if (memchr(rx_buffer, '\n', bytes_recv)) {
 
-        while ((bytes_recv = recv(client_fd, rx_buffer + total_recv, BUFFER_SIZE - 1, 0)) > 0) {
-            total_recv += bytes_recv;
-            rx_buffer[total_recv] = '\0';
-
-            if (strchr(rx_buffer, '\n')) {
-                write(fd, rx_buffer, total_recv);
-                
+                fsync(fd); 
                 lseek(fd, 0, SEEK_SET);
+
                 char tx_buffer[BUFFER_SIZE];
                 ssize_t bytes_read;
                 while ((bytes_read = read(fd, tx_buffer, sizeof(tx_buffer))) > 0) {
@@ -114,7 +127,6 @@ int main(int argc, char *argv[]) {
                 }
                 break; 
             }
-            rx_buffer = realloc(rx_buffer, total_recv + BUFFER_SIZE);
         }
 
         free(rx_buffer);
