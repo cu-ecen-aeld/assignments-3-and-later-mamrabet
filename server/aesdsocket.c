@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
     }
     
     pthread_mutex_destroy(&file_mutex);
-    remove(DATA_FILE);
+    //remove(DATA_FILE);
     close(server_fd);
     closelog();
     return 0;
