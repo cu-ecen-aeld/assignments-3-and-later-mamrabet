@@ -72,17 +72,24 @@ void* client_handler(void* thread_param) {
     }
 
     if (total_recv > 0) {
-        pthread_mutex_lock(&file_mutex);
-        int fd = open(DATA_FILE, O_RDWR | O_CREAT | O_APPEND, 0666);
-        if (fd != -1) {
-            write(fd, rx_buffer, total_recv);
-            lseek(fd, 0, SEEK_SET);
-            ssize_t bytes_read;
-            while ((bytes_read = read(fd, rx_buffer, BUF_SIZE)) > 0) {
-                send(params->client_fd, rx_buffer, bytes_read, 0);
-            }
-            close(fd);
+    pthread_mutex_lock(&file_mutex);
+    
+
+    int fd_w = open(DATA_FILE, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd_w != -1) {
+        write(fd_w, rx_buffer, total_recv);
+        close(fd_w);
+    }
+
+    int fd_r = open(DATA_FILE, O_RDONLY);
+    if (fd_r != -1) {
+        ssize_t bytes_read;
+
+        while ((bytes_read = read(fd_r, rx_buffer, BUF_SIZE)) > 0) {
+            send(params->client_fd, rx_buffer, bytes_read, 0);
         }
+        close(fd_r);
+    }
         pthread_mutex_unlock(&file_mutex);
     }
 
