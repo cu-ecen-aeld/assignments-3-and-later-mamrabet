@@ -2,7 +2,7 @@
 
 DESC="AESD Socket Server"
 NAME=aesdsocket
-DAEMON= /usr/bin/aesdsocket
+DAEMON=/usr/bin/aesdsocket
 PIDFILE=/var/run/$NAME.pid
 DAEMON_ARGS="-d"
 
