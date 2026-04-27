@@ -13,9 +13,14 @@
 #include <sys/queue.h>
 #include <stdbool.h>
 #include <time.h>
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT 9000
-#define DATA_FILE "/var/tmp/aesdsocketdata"
+#ifdef USE_AESD_CHAR_DEVICE
+    #define DATA_FILE "/dev/aesdchar"
+#else
+    #define DATA_FILE "/var/tmp/aesdsocketdata"
+#endif
 #define BUF_SIZE 20000 
 
 struct thread_node {
@@ -68,31 +73,61 @@ void* client_handler(void* thread_param) {
         ssize_t bytes = recv(params->client_fd, rx_buffer + total_recv, BUF_SIZE - total_recv - 1, 0);
         if (bytes <= 0) break;
         total_recv += bytes;
+        rx_buffer[total_recv] = '\0';
         if (memchr(rx_buffer, '\n', total_recv)) break;
     }
+    
+    if (total_recv <= 0) {
+        free(rx_buffer);
+        close(params->client_fd);
+        params->thread_complete = true;
+        return NULL;
+    }
+    
+    
+    pthread_mutex_lock(&file_mutex);
+    const char *seek_cmd = "AESDCHAR_IOCSEEKTO:";
+    size_t seek_cmd_len = strlen(seek_cmd);
 
     if (total_recv > 0) {
-    pthread_mutex_lock(&file_mutex);
-    
-
-    int fd_w = open(DATA_FILE, O_WRONLY | O_CREAT | O_APPEND, 0666);
-    if (fd_w != -1) {
-        write(fd_w, rx_buffer, total_recv);
-        close(fd_w);
-    }
-
-    int fd_r = open(DATA_FILE, O_RDONLY);
-    if (fd_r != -1) {
-        ssize_t bytes_read;
-
-        while ((bytes_read = read(fd_r, rx_buffer, BUF_SIZE)) > 0) {
-            send(params->client_fd, rx_buffer, bytes_read, 0);
+       if (total_recv >= (ssize_t)seek_cmd_len &&
+        strncmp(rx_buffer, seek_cmd, seek_cmd_len) == 0) {
+            
+            struct aesd_seekto seekto;
+            if (sscanf(rx_buffer + strlen(seek_cmd), "%u,%u", 
+                       &seekto.write_cmd, &seekto.write_cmd_offset) == 2) {
+                int fd = open(DATA_FILE, O_RDWR);
+                if (fd != -1) {
+                    if (ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto) == 0) {
+                        ssize_t bytes_read;
+                        while ((bytes_read = read(fd, rx_buffer, BUF_SIZE)) > 0) {
+                            send(params->client_fd, rx_buffer, bytes_read, 0);
+                        }
+                    }
+                    close(fd);
+                }
+            }
+           
         }
-        close(fd_r);
-    }
-        pthread_mutex_unlock(&file_mutex);
-    }
+        else {
+            int fd_w = open(DATA_FILE, O_WRONLY | O_CREAT | O_APPEND, 0666);
+            if (fd_w != -1) {
+                write(fd_w, rx_buffer, total_recv);
+                close(fd_w);
+            }
 
+            int fd_r = open(DATA_FILE, O_RDONLY);
+            if (fd_r != -1) {
+                ssize_t bytes_read;
+                while ((bytes_read = read(fd_r, rx_buffer, BUF_SIZE)) > 0) {
+                    send(params->client_fd, rx_buffer, bytes_read, 0);
+                }
+                close(fd_r);
+            }
+        }
+
+    }
+    pthread_mutex_unlock(&file_mutex);
     free(rx_buffer);
     close(params->client_fd);
     params->thread_complete = true;
@@ -135,9 +170,10 @@ int main(int argc, char *argv[]) {
     }
 
     SLIST_INIT(&head);
+#ifndef USE_AESD_CHAR_DEVICE
     pthread_t time_tid;
     pthread_create(&time_tid, NULL, timestamp_handler, NULL);
-
+#endif
     while (!exit_requested) {
         struct sockaddr_in caddr;
         socklen_t clen = sizeof(caddr);
@@ -166,8 +202,9 @@ int main(int argc, char *argv[]) {
             it = next;
         }
     }
-
+#ifndef USE_AESD_CHAR_DEVICE
     pthread_join(time_tid, NULL);
+#endif
     while (!SLIST_EMPTY(&head)) {
         struct thread_node *it = SLIST_FIRST(&head);
         pthread_join(it->thread_id, NULL);

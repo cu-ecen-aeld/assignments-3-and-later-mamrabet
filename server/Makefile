@@ -7,7 +7,7 @@ all: $(TARGET)
 
 
 $(TARGET): aesdsocket.c
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+	$(CC) $(CFLAGS) -DUSE_AESD_CHAR_DEVICE $^ -o $@ $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET)
